@@ -1,0 +1,6 @@
+echo "Number of CPUs on the host: `nproc --all`"
+echo "Total Memory on the host: `cat /proc/meminfo | grep -i memTotal`"
+/usr/sbin/sestatus
+echo -n "NFS Client Utils installed: " `rpm -qa | grep nfs-utils >/dev/null 2>&1` && echo "Yes" || echo "No"
+echo -n "Cohesity Agent installed: " `rpm -qa | grep cohesity-agent >/dev/null 2>&1` && echo "Yes" || echo "No"
+echo -n "Cohesity Agent running: " `systemctl status cohesity-agent | grep '(running)' >/dev/null 2>&1` && echo "Yes" || echo "No"
