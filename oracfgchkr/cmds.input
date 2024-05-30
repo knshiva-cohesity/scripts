@@ -1,3 +1,4 @@
+echo "Operating System: `cat /etc/os-release | grep PRETTY_NAME | cut -d'=' -f2`"
 echo "Number of CPUs on the host: `nproc --all`"
 echo "Total Memory on the host: `cat /proc/meminfo | grep -i memTotal`"
 /usr/sbin/sestatus

@@ -10,8 +10,6 @@
 # Input: Oracle DB SID
 #
 # Output: Oracle DB parameters printed on stdout
-#
-# Author: shivananda.kn@cohesity.com
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
 # - - - - - - - - -
@@ -33,9 +31,12 @@ ORACLESID=$1
 OUTPUTFILE="dbparams""_$1"
 DBLAYOUTOPFILE="dblayoutop""_$1"
 DBHOSTPARAMSFILE="dbhostparams""_$1"
+RMANOPFILE="rmanparams""_$1"
+PORTOPFILE="host_cluster_ports""_$1"
 isASM=""
 isRAC=""
 queryop=''
+rqueryop=''
 GRD_HOME=""
 ORA_HOME=""
 NoOfRACNodes=""
@@ -43,6 +44,9 @@ ClusterName=""
 txtopf=""
 hosttxtopf=""
 laytxtopf=""
+rmantxtopf=""
+porttxtopf=""
+cohagntPort=50051
 
 
 #dbconn() {
@@ -50,6 +54,43 @@ laytxtopf=""
 #	runsql="export ORACLE_SID=vorcl1; sqlplus -s \"/ as sysdba\" @$sql"	
 #	eval "$runsql"
 #}
+
+
+prtchk() {
+	porttxtopf=$PORTOPFILE".output"
+	if [ -f $porttxtopf ]; then
+		mv $porttxtopf $porttxtopf`date +%s`
+	fi
+	`nc -zv localhost $cohagntPort > /dev/null 2>&1` && echo "Oracle Host Port $cohagntPort: OPEN" | tee -a $porttxtopf || echo "Oracle Host Port $cohagntPort: CLOSED" | tee -a $porttxtopf
+	IFS=',' read -ra iparr <<< "$clusterip"
+	for ip in "${iparr[@]}"
+	do
+		echo "- - -"
+		for i in "111" "2049" "11111"; do
+			`nc -zv $ip $i > /dev/null 2>&1` && echo "Cluster Node $ip Port $i: OPEN" | tee -a $porttxtopf || echo "Cluster Node $ip Port $i: CLOSED" | tee -a $porttxtopf
+		done
+	done
+	echo "Find the output in text format at: $porttxtopf"
+}
+
+rmanquery_op() {
+export ORACLE_SID=$ORACLESID
+rqueryop=`$ORACLE_HOME/bin/rman target / log="$rmantxtopf" << EOF
+set echo off
+$1
+exit
+EOF`
+}
+
+rmanquery() {
+	rmantxtopf=$RMANOPFILE".output"
+	if [ -f $rmantxtopf ]; then
+		mv $rmantxtopf $rmantxtopf`date +%s`
+	fi
+	rman_cmd="show all;"
+	rmanquery_op "$rman_cmd"
+	echo "Find the output in text format at: $rmantxtopf"
+}
 
 runquery_op() {
 query="select distinct substr(name, 1, instr(name,'/',-1)-1 ) name from v\$datafile;"
@@ -88,13 +129,13 @@ dblayout () {
 		runquery_op "$query"
 		for i in $queryop;
 			do 
-				echo "The $t path is: $i" | tee -a $laytxtopf
+				echo "The $t path is: $i" >> $laytxtopf
 				if [[ $isASM = "No" ]]; then
-					echo "The mount point is: "`/bin/df -h --output=target $i | tail -n1` | tee -a $laytxtopf
-					echo "Source of mount point is: "`/bin/df -h --output=source $i | tail -n1` | tee -a $laytxtopf
-					echo "The filesystem of mount point is: "`/bin/df -h --output=fstype $i | tail -n1` | tee -a $laytxtopf
+					echo "The mount point is: "`/bin/df -h --output=target $i | tail -n1` >> $laytxtopf
+					echo "Source of mount point is: "`/bin/df -h --output=source $i | tail -n1` >> $laytxtopf
+					echo "The filesystem of mount point is: "`/bin/df -h --output=fstype $i | tail -n1` >> $laytxtopf
 					mntpt=`/bin/df -h --output=target $i | tail -n1`
-					cat /etc/mtab  | grep $mntpt" " | awk '{print "The mount options are: " $4}' | tee -a $laytxtopf
+					cat /etc/mtab  | grep $mntpt" " | awk '{print "The mount options are: " $4}' >> $laytxtopf
 				fi
 			done
 	done
@@ -103,13 +144,13 @@ dblayout () {
 	runquery_op "$query"
 	for i in $queryop;
 		do 
-			echo "The redolog file path is: $i" | tee -a $laytxtopf
+			echo "The redolog file path is: $i" >> $laytxtopf
 			if [[ $isASM = "No" ]]; then
-				echo "The mount point is: "`/bin/df -h --output=target $i | tail -n1` | tee -a $laytxtopf
-				echo "Source of mount point is: "`/bin/df -h --output=source $i | tail -n1` | tee -a $laytxtopf
-				echo "The filesystem of mount point is: "`/bin/df -h --output=fstype $i | tail -n1` | tee -a $laytxtopf
+				echo "The mount point is: "`/bin/df -h --output=target $i | tail -n1` >> $laytxtopf
+				echo "Source of mount point is: "`/bin/df -h --output=source $i | tail -n1` >> $laytxtopf
+				echo "The filesystem of mount point is: "`/bin/df -h --output=fstype $i | tail -n1` >> $laytxtopf
 				mntpt=`/bin/df -h --output=target $i | tail -n1`
-				cat /etc/mtab  | grep $mntpt" " | awk '{print "The mount options are: " $4}' | tee -a $laytxtopf
+				cat /etc/mtab  | grep $mntpt" " | awk '{print "The mount options are: " $4}' >> $laytxtopf
 			fi
 		done
 	echo "Find the output in text format at: $laytxtopf"
@@ -178,6 +219,14 @@ main() {
 	echo "* * * * *  D B   L a y o u t  * * * * * *"
 	echo -e "* * * * * * * * * * * * * * * * * * * * *\n"
 	dblayout
+	echo -e "\n* * * * * * * * * * * * * * * * * * * * *"
+	echo "* * * * *  R M A N   C o n f i g  * * * *"
+	echo -e "* * * * * * * * * * * * * * * * * * * * *\n"
+	rmanquery
+	echo -e "\n* * * * * * * * * * * * * * * * * * * * *"
+	echo "* * * * *  P O R T   Q u e r y  * * * * *"
+	echo -e "* * * * * * * * * * * * * * * * * * * * *\n"
+	prtchk
 
 	if [ ! -z $fileformat ]; then
 		case $fileformat in
@@ -191,6 +240,9 @@ main() {
 			dblytcsvopf=$DBLAYOUTOPFILE".csv"
 			`sed 's/:/,/g' $laytxtopf > $dblytcsvopf`
 			echo "Find the output in .csv format at: $dblytcsvopf"
+			portcsvopf=$PORTOPFILE".csv"
+			`sed 's/:/,/g' $porttxtopf > $portcsvopf`
+			echo "Find the output in .csv format at: $portcsvopf"
 			;;
 		   "json")
 			jsonopf=$OUTPUTFILE".json"
@@ -208,12 +260,16 @@ echo "Welcome to Cohesity Pre-Checker Tool!"
 if [ $# -lt 1 ]; then
 	echo "Provided args are incorrect, refer Usage below..."
 	echo "Usage:
-	./prechckr.sh <oracle sid> [csv | json]
+	./prechckr.sh <oracle sid> [\"<List of Cluster Node IPs>\"] [csv | json]
+	"
+	echo "Example:
+	./prechckr.sh orcl \"10.1.2.1,10.1.2.2,10.1.2.3\"
 	"
 	exit
 fi
 
-fileformat=$2
+clusterip=$2
+fileformat=$3
 myproc=ora_pmon_$1
 dbproc=`ps -eo args | awk '{print $1}' | grep -w $myproc`
 if [[ -z $dbproc || ($myproc != $dbproc) ]]; then
