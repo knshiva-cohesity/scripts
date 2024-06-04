@@ -7,6 +7,7 @@ This tool when run on a Host running Oracle DB (Standalone or RAC) provides outp
 * Oracle DB Layout
 * RMAN Config
 * Host and Cohesity Cluster Ports availability
+
 The output is displayed on the terminal and logged in text format (default) files for each group.
 
 # Dependencies
